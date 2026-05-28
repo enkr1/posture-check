@@ -311,18 +311,25 @@ thresholdEl.addEventListener('input', () => {
   updateDeltas();
 });
 
+function syncVariantButtons() {
+  document.querySelectorAll('.variant-btn').forEach((b) => {
+    const active = b.dataset.variant === state.activeVariant;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', String(active));
+  });
+}
+
 document.querySelectorAll('.variant-btn').forEach((btn) => {
-  btn.classList.toggle('active', btn.dataset.variant === state.activeVariant);
   btn.addEventListener('click', () => {
     state.activeVariant = btn.dataset.variant;
     const url = new URL(location.href);
     url.searchParams.set('alert', state.activeVariant);
     history.replaceState({}, '', url);
-    document.querySelectorAll('.variant-btn').forEach((b) =>
-      b.classList.toggle('active', b.dataset.variant === state.activeVariant)
-    );
+    syncVariantButtons();
   });
 });
+
+syncVariantButtons();
 
 function todayStart() {
   const d = new Date();

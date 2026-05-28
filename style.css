@@ -415,3 +415,18 @@ footer {
 .status.good    { color: var(--good); }
 .status.pending { color: var(--warn); }
 .status.bad     { color: var(--bad); }
+
+/* ── Respect motion preference ────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot,
+  .sync-bar,
+  .cam-frame::after,
+  .cam-frame.alert {
+    animation: none;
+  }
+  .log-entry,
+  #threshold::-webkit-slider-thumb {
+    transition: none;
+  }
+}

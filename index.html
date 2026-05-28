@@ -35,11 +35,11 @@
   </main>
 
   <footer>
-    <div class="variant-bar">
-      <button class="variant-btn" data-variant="beep">BEEP</button>
-      <button class="variant-btn" data-variant="voice">VOICE</button>
-      <button class="variant-btn" data-variant="flash">FLASH</button>
-      <button class="variant-btn" data-variant="combo">COMBO</button>
+    <div class="variant-bar" role="group" aria-label="Alert variant">
+      <button class="variant-btn" data-variant="beep" aria-pressed="false">BEEP</button>
+      <button class="variant-btn" data-variant="voice" aria-pressed="false">VOICE</button>
+      <button class="variant-btn" data-variant="flash" aria-pressed="false">FLASH</button>
+      <button class="variant-btn" data-variant="combo" aria-pressed="false">COMBO</button>
     </div>
     <div class="slider-group">
       <label for="threshold">SENSITIVITY</label>
@@ -47,7 +47,7 @@
       <span id="threshold-value">0.035</span>
       <span id="deltas">F:----- L:-----</span>
     </div>
-    <div class="status" id="status">INIT</div>
+    <div class="status" id="status" role="status" aria-live="polite">INIT</div>
   </footer>
 
   <script type="module" src="app.js"></script>
