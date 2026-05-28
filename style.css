@@ -7,7 +7,13 @@
   --bad: #ff2020;
   --dim: #404040;
   --frame: #1a1a1a;
+
   --mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+
+  --text-xs: 10px;
+  --text-sm: 11px;
+  --text-md: 12px;
+  --text-lg: 13px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -16,12 +22,14 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--text-lg);
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr auto;
   letter-spacing: 0.05em;
 }
+
+/* ── Header ───────────────────────────────────────── */
 
 header {
   padding: 14px 24px;
@@ -33,7 +41,7 @@ header {
 }
 
 h1 {
-  font-size: 13px;
+  font-size: var(--text-lg);
   letter-spacing: 0.32em;
   font-weight: normal;
   color: var(--fg);
@@ -52,7 +60,7 @@ h1::before {
   color: var(--rec);
   padding: 6px 14px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-sm);
   letter-spacing: 0.18em;
   cursor: pointer;
 }
@@ -61,6 +69,8 @@ h1::before {
   background: var(--rec);
   color: var(--bg);
 }
+
+/* ── Main + Camera frame ──────────────────────────── */
 
 main {
   padding: 24px;
@@ -83,6 +93,37 @@ main {
     0 0 0 4px var(--bg),
     0 0 24px rgba(255, 32, 32, 0.18),
     inset 0 0 50px rgba(0, 0, 0, 0.55);
+}
+
+/* Stacked scanlines + vignette on a single pseudo. */
+.cam-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 2px,
+      rgba(0, 0, 0, 0.22) 2px,
+      rgba(0, 0, 0, 0.22) 3px
+    ),
+    radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.65) 100%);
+}
+
+/* SVG turbulence noise — blends over everything below. */
+.cam-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+  animation: static-shift 0.13s steps(3) infinite;
+  mix-blend-mode: screen;
 }
 
 #video {
@@ -110,9 +151,12 @@ main {
   align-items: center;
   gap: 6px;
   color: var(--rec);
-  font-size: 11px;
+  font-size: var(--text-sm);
   z-index: 2;
-  text-shadow: 0 0 4px rgba(0,0,0,0.9);
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.9),
+    1px 0 0 rgba(0, 200, 255, 0.45),
+    -1px 0 0 rgba(255, 32, 32, 0.45);
 }
 
 .rec-dot {
@@ -123,60 +167,17 @@ main {
   animation: pulse 1.4s infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
-}
-
 .cam-timestamp {
   position: absolute;
   bottom: 8px;
   right: 10px;
   color: var(--rec);
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   z-index: 2;
-  text-shadow: 0 0 4px rgba(0,0,0,0.9);
-}
-
-.scanlines {
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent 0,
-    transparent 2px,
-    rgba(0,0,0,0.22) 2px,
-    rgba(0,0,0,0.22) 3px
-  );
-  pointer-events: none;
-  z-index: 1;
-}
-
-/* ── surveillance overlays ───────────────────────────────── */
-
-.static {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0.08;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
-  animation: static-shift 0.13s steps(3) infinite;
-  mix-blend-mode: screen;
-}
-
-@keyframes static-shift {
-  0%   { transform: translate(0, 0); }
-  33%  { transform: translate(-2px, 1px); }
-  66%  { transform: translate(1px, -2px); }
-}
-
-.vignette {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.65) 100%);
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.9),
+    1px 0 0 rgba(0, 200, 255, 0.45),
+    -1px 0 0 rgba(255, 32, 32, 0.45);
 }
 
 .sync-bar {
@@ -187,11 +188,26 @@ main {
   height: 50px;
   pointer-events: none;
   z-index: 1;
-  background: linear-gradient(to bottom,
+  background: linear-gradient(
+    to bottom,
     transparent,
     rgba(255, 255, 255, 0.06) 50%,
-    transparent);
+    transparent
+  );
   animation: sync 11s linear infinite;
+}
+
+.cam-frame.alert { animation: alert-flash 0.35s 3; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+
+@keyframes static-shift {
+  0%   { transform: translate(0, 0); }
+  33%  { transform: translate(-2px, 1px); }
+  66%  { transform: translate(1px, -2px); }
 }
 
 @keyframes sync {
@@ -199,30 +215,17 @@ main {
   100% { top: 100%; }
 }
 
-/* Chromatic aberration — VHS bleeding on overlay text */
-.rec-indicator,
-.cam-timestamp {
-  text-shadow:
-    0 0 4px rgba(0, 0, 0, 0.9),
-    1px 0 0 rgba(0, 200, 255, 0.45),
-    -1px 0 0 rgba(255, 32, 32, 0.45);
-}
-
-.cam-frame.alert {
-  animation: alert-flash 0.35s 3;
-}
-
 @keyframes alert-flash {
   0%, 100% { box-shadow: 0 0 0 4px var(--bg), 0 0 0 0 var(--rec); }
   50%      { box-shadow: 0 0 0 4px var(--bg), 0 0 48px 8px var(--rec); }
 }
 
-.stats, .log {
-  width: 100%;
-}
+/* ── Stats + Log ──────────────────────────────────── */
+
+.stats, .log { width: 100%; }
 
 h2 {
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.3em;
   color: var(--fg);
   margin-bottom: 10px;
@@ -246,14 +249,14 @@ h2::before {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 6px 16px;
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 
 #stats-grid .label { color: var(--dim); }
 #stats-grid .value { text-align: right; }
 
 #log-list {
-  font-size: 11px;
+  font-size: var(--text-sm);
   max-height: 240px;
   overflow-y: auto;
 }
@@ -272,13 +275,13 @@ h2::before {
   transition: background 0.15s;
 }
 
-.log-entry:hover {
-  background: rgba(255, 32, 32, 0.06);
-}
+.log-entry:hover { background: rgba(255, 32, 32, 0.06); }
 
 .log-entry .outcome.corrected      { color: var(--good); }
 .log-entry .outcome.corrected-slow { color: var(--warn); }
 .log-entry .outcome.ignored        { color: var(--bad); }
+
+/* ── Footer + controls ────────────────────────────── */
 
 footer {
   padding: 14px 24px;
@@ -290,10 +293,7 @@ footer {
   flex-wrap: wrap;
 }
 
-.variant-bar {
-  display: flex;
-  gap: 4px;
-}
+.variant-bar { display: flex; gap: 4px; }
 
 .variant-btn {
   background: transparent;
@@ -301,7 +301,7 @@ footer {
   color: var(--fg);
   padding: 6px 12px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-sm);
   letter-spacing: 0.18em;
   cursor: pointer;
 }
@@ -315,7 +315,7 @@ footer {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--dim);
   letter-spacing: 0.18em;
 }
@@ -333,7 +333,6 @@ footer {
 
 #threshold:focus { outline: none; }
 
-/* Cross-browser slider styling: webkit and firefox use different pseudo-elements. */
 #threshold::-webkit-slider-runnable-track {
   height: 2px;
   border: none;
@@ -389,12 +388,12 @@ footer {
   color: var(--rec);
   min-width: 44px;
   text-align: right;
-  font-size: 11px;
+  font-size: var(--text-sm);
   letter-spacing: 0.05em;
 }
 
 #deltas {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--dim);
   letter-spacing: 0.08em;
   white-space: nowrap;
@@ -408,11 +407,11 @@ footer {
 }
 
 .status {
-  font-size: 11px;
+  font-size: var(--text-sm);
   letter-spacing: 0.2em;
   color: var(--dim);
 }
 
-.status.good { color: var(--good); }
+.status.good    { color: var(--good); }
 .status.pending { color: var(--warn); }
-.status.bad { color: var(--bad); }
+.status.bad     { color: var(--bad); }
