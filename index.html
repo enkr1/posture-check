@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POSTURE CHECK</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>POSTURE CHECK</h1>
+    <button id="calibrate">CALIBRATE</button>
+  </header>
+
+  <main>
+    <section class="cam-frame" id="cam-frame">
+      <div class="rec-indicator">
+        <span class="rec-dot"></span><span>REC</span>
+      </div>
+      <div class="cam-timestamp" id="timestamp">--:--:--</div>
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div class="static"></div>
+      <div class="scanlines"></div>
+      <div class="sync-bar"></div>
+      <div class="vignette"></div>
+    </section>
+
+    <section class="stats">
+      <h2>TODAY</h2>
+      <div id="stats-grid"></div>
+    </section>
+
+    <section class="log">
+      <h2>LOG</h2>
+      <div id="log-list"></div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="variant-bar">
+      <button class="variant-btn" data-variant="beep">BEEP</button>
+      <button class="variant-btn" data-variant="voice">VOICE</button>
+      <button class="variant-btn" data-variant="flash">FLASH</button>
+      <button class="variant-btn" data-variant="combo">COMBO</button>
+    </div>
+    <div class="slider-group">
+      <label for="threshold">SENSITIVITY</label>
+      <input type="range" id="threshold" min="0.015" max="0.20" step="0.005" value="0.035" />
+      <span id="threshold-value">0.035</span>
+      <span id="deltas">F:----- L:-----</span>
+    </div>
+    <div class="status" id="status">INIT</div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
