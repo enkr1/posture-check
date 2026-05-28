@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" role="img" aria-label="POSTURE CHECK — browser-only posture monitor with surveillance-themed UI">
+  <defs>
+    <pattern id="scan" x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="0" x2="3" y2="0" stroke="#000" stroke-opacity="0.6"/>
+    </pattern>
+    <radialGradient id="vig" cx="50%" cy="50%" r="70%">
+      <stop offset="40%" stop-color="black" stop-opacity="0"/>
+      <stop offset="100%" stop-color="black" stop-opacity="0.65"/>
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="600" fill="#0a0a0a"/>
+  <rect width="1200" height="600" fill="url(#scan)" opacity="0.35"/>
+  <rect width="1200" height="600" fill="url(#vig)"/>
+
+  <!-- Left: camera frame mockup -->
+  <g transform="translate(100,140)">
+    <rect width="480" height="320" fill="#1a1a1a" stroke="#ff2020" stroke-width="2.5"/>
+    <rect width="480" height="320" fill="url(#scan)" opacity="0.4"/>
+
+    <!-- REC indicator -->
+    <circle cx="26" cy="26" r="7" fill="#ff2020" filter="url(#glow)"/>
+    <text x="44" y="32" font-family="monospace" font-size="13" fill="#ff2020" letter-spacing="1">REC</text>
+
+    <!-- Timestamp -->
+    <text x="335" y="305" font-family="monospace" font-size="12" fill="#ff2020" letter-spacing="0.5">2026-05-29 14:32:08</text>
+
+    <!-- Mock pose skeleton -->
+    <g opacity="0.85">
+      <circle cx="240" cy="120" r="38" fill="none" stroke="#20c060" stroke-width="2"/>
+      <circle cx="240" cy="120" r="5" fill="#20c060"/>
+      <line x1="170" y1="200" x2="310" y2="200" stroke="#ff2020" stroke-width="2.5"/>
+      <circle cx="170" cy="200" r="6" fill="#ff2020"/>
+      <circle cx="310" cy="200" r="6" fill="#ff2020"/>
+      <line x1="240" y1="158" x2="240" y2="200" stroke="#909090" stroke-width="1.5" stroke-dasharray="4 3"/>
+    </g>
+  </g>
+
+  <!-- Right: title block -->
+  <g transform="translate(660,160)">
+    <text x="0" y="0" font-family="monospace" font-size="40" fill="#d0d0d0" letter-spacing="8" font-weight="500">
+      <tspan fill="#ff2020" filter="url(#glow)">◉ </tspan>POSTURE CHECK
+    </text>
+    <text x="0" y="36" font-family="monospace" font-size="11" fill="#404040" letter-spacing="3">V1 · BROWSER-ONLY · NO BACKEND</text>
+
+    <text x="0" y="110" font-family="monospace" font-size="15" fill="#d0d0d0">Watches you via webcam. Pings you</text>
+    <text x="0" y="134" font-family="monospace" font-size="15" fill="#d0d0d0">when you slouch or lean. Logs every</text>
+    <text x="0" y="158" font-family="monospace" font-size="15" fill="#d0d0d0">slip. Pure frontend, no telemetry.</text>
+
+    <text x="0" y="220" font-family="monospace" font-size="11" fill="#20c060" letter-spacing="2">✓ NO DATA LEAVES YOUR DEVICE</text>
+    <text x="0" y="240" font-family="monospace" font-size="11" fill="#20c060" letter-spacing="2">✓ NO BUILD STEP / NO npm install</text>
+    <text x="0" y="260" font-family="monospace" font-size="11" fill="#20c060" letter-spacing="2">✓ MEDIAPIPE POSE IN-BROWSER</text>
+    <text x="0" y="280" font-family="monospace" font-size="11" fill="#20c060" letter-spacing="2">✓ 4 ALERT VARIANTS · LIVE TUNING</text>
+
+    <!-- Faux variant bar -->
+    <g transform="translate(0,330)">
+      <rect x="0"   y="0" width="62" height="22" fill="none" stroke="#ff2020" stroke-width="1"/>
+      <text x="13"  y="15" font-family="monospace" font-size="10" fill="#ff2020" letter-spacing="2">BEEP</text>
+      <rect x="68"  y="0" width="62" height="22" fill="none" stroke="#404040" stroke-width="1"/>
+      <text x="79"  y="15" font-family="monospace" font-size="10" fill="#d0d0d0" letter-spacing="2">VOICE</text>
+      <rect x="136" y="0" width="62" height="22" fill="none" stroke="#404040" stroke-width="1"/>
+      <text x="149" y="15" font-family="monospace" font-size="10" fill="#d0d0d0" letter-spacing="2">FLASH</text>
+      <rect x="204" y="0" width="62" height="22" fill="none" stroke="#404040" stroke-width="1"/>
+      <text x="216" y="15" font-family="monospace" font-size="10" fill="#d0d0d0" letter-spacing="2">COMBO</text>
+    </g>
+  </g>
+
+  <!-- Bottom-right corner attribution -->
+  <text x="1170" y="585" font-family="monospace" font-size="10" fill="#404040" text-anchor="end" letter-spacing="1">MIT · enkr1/posture-check</text>
+</svg>
