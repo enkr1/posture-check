@@ -13,6 +13,7 @@ const TICK_HZ = 5;
 const DAYS_KEPT = 7;
 const LATERAL_RATIO = 0.6;
 
+// ── DOM refs ──────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 const overlay = $('overlay');
@@ -27,14 +28,59 @@ const thresholdValEl = $('threshold-value');
 const deltasEl = $('deltas');
 const camFrame = $('cam-frame');
 
-let baseline = JSON.parse(localStorage.getItem(STORAGE.baseline) || 'null');
-let threshold = parseFloat(localStorage.getItem(STORAGE.threshold) || '0.035');
-let events = (JSON.parse(localStorage.getItem(STORAGE.events) || '[]')).filter(isRecent);
-let activeVariant = new URLSearchParams(location.search).get('alert') || 'beep';
-let pendingState = null;
-let activeEvent = null;
-let pose = null;
-let poseLandmarker = null;
+// ── Safe localStorage (handles disabled / corrupt / full) ──
+function lsGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    if (typeof fallback === 'number') {
+      const v = parseFloat(raw);
+      return Number.isFinite(v) ? v : fallback;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, typeof value === 'number' ? String(value) : JSON.stringify(value));
+  } catch {
+    // private mode / quota exceeded — drop silently.
+  }
+}
+
+function isRecent(e) {
+  return Date.now() - e.startedAt < DAYS_KEPT * 24 * 60 * 60 * 1000;
+}
+
+// ── App state: single source of mutation ─────────────
+const state = {
+  baseline: lsGet(STORAGE.baseline, null),
+  threshold: lsGet(STORAGE.threshold, 0.035),
+  events: lsGet(STORAGE.events, []).filter(isRecent),
+  activeVariant: new URLSearchParams(location.search).get('alert') || 'beep',
+  pendingState: null,
+  activeEvent: null,
+  pose: null,
+  poseLandmarker: null,
+  audioCtx: null,
+  lastDetectTs: 0,
+};
+
+function persistEvents() {
+  state.events = state.events.filter(isRecent);
+  lsSet(STORAGE.events, state.events);
+}
+
+// ── Shared geometry: both classify and live readout use this ──
+function computeDeltas(pose, baseline) {
+  return {
+    fDelta: pose.nose.y - baseline.noseY,
+    lDelta: (pose.leftShoulder.y - pose.rightShoulder.y) - baseline.shoulderTilt,
+  };
+}
 
 function updateSliderFill() {
   const min = parseFloat(thresholdEl.min);
@@ -43,18 +89,9 @@ function updateSliderFill() {
   thresholdEl.style.setProperty('--val', v);
 }
 
-thresholdEl.value = threshold;
-thresholdValEl.textContent = threshold.toFixed(3);
+thresholdEl.value = state.threshold;
+thresholdValEl.textContent = state.threshold.toFixed(3);
 updateSliderFill();
-
-function isRecent(e) {
-  return Date.now() - e.startedAt < DAYS_KEPT * 24 * 60 * 60 * 1000;
-}
-
-function persistEvents() {
-  events = events.filter(isRecent);
-  localStorage.setItem(STORAGE.events, JSON.stringify(events));
-}
 
 /**
  * Per-frame posture classification.
@@ -62,24 +99,20 @@ function persistEvents() {
  * Temporal smoothing lives in tick(), not here — return an honest snapshot.
  */
 function classifyPosture(pose, baseline, threshold) {
-  // Low-visibility keypoints give wild coords; treat as good rather than fire false alerts.
   if (pose.nose.visibility < 0.5 ||
       pose.leftShoulder.visibility < 0.5 ||
       pose.rightShoulder.visibility < 0.5) {
     return 'good';
   }
 
-  if (pose.nose.y - baseline.noseY > threshold) {
-    return 'forward';
-  }
+  const { fDelta, lDelta } = computeDeltas(pose, baseline);
 
-  // Shoulders move less than the head from natural typing/glancing, so 0.6× threshold.
-  const tiltDelta = (pose.leftShoulder.y - pose.rightShoulder.y) - baseline.shoulderTilt;
-  const lateralThreshold = threshold * LATERAL_RATIO;
+  if (fDelta > threshold) return 'forward';
 
+  const lat = threshold * LATERAL_RATIO;
   // y grows downward, so leftShoulder dropping (y rises) means user leans to their own LEFT.
-  if (tiltDelta >  lateralThreshold) return 'lean-left';
-  if (tiltDelta < -lateralThreshold) return 'lean-right';
+  if (lDelta >  lat) return 'lean-left';
+  if (lDelta < -lat) return 'lean-right';
 
   return 'good';
 }
@@ -99,7 +132,7 @@ async function setupPose() {
   const vision = await FilesetResolver.forVisionTasks(
     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm'
   );
-  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+  state.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath:
         'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
@@ -120,7 +153,7 @@ function extractPose(landmarks) {
   };
 }
 
-function drawSkeleton(p, state) {
+function drawSkeleton(p, postureState) {
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   if (!p) return;
   const w = overlay.width;
@@ -128,7 +161,7 @@ function drawSkeleton(p, state) {
   // canvas is not CSS-mirrored, so flip x to align with mirrored video display
   const X = (kp) => (1 - kp.x) * w;
   const Y = (kp) => kp.y * h;
-  const color = state === 'good' ? '#20c060' : state ? '#ff2020' : '#909090';
+  const color = postureState === 'good' ? '#20c060' : postureState ? '#ff2020' : '#909090';
 
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
@@ -146,15 +179,14 @@ function drawSkeleton(p, state) {
 }
 
 function updateDeltas() {
-  if (!pose || !baseline) {
+  if (!state.pose || !state.baseline) {
     deltasEl.innerHTML = 'F:----- L:-----';
     return;
   }
-  const fDelta = pose.nose.y - baseline.noseY;
-  const lDelta = (pose.leftShoulder.y - pose.rightShoulder.y) - baseline.shoulderTilt;
-  const lat = threshold * LATERAL_RATIO;
+  const { fDelta, lDelta } = computeDeltas(state.pose, state.baseline);
+  const lat = state.threshold * LATERAL_RATIO;
   const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(3);
-  const fClass = fDelta > threshold ? 'over' : '';
+  const fClass = fDelta > state.threshold ? 'over' : '';
   const lClass = Math.abs(lDelta) > lat ? 'over' : '';
   deltasEl.innerHTML =
     `<span class="${fClass}">F:${fmt(fDelta)}</span> ` +
@@ -163,54 +195,54 @@ function updateDeltas() {
 
 function tick() {
   updateDeltas();
-  if (!pose || !baseline) return;
-  const state = classifyPosture(pose, baseline, threshold);
+  if (!state.pose || !state.baseline) return;
+  const postureState = classifyPosture(state.pose, state.baseline, state.threshold);
   const now = Date.now();
 
-  if (state === 'good') {
-    if (activeEvent) {
-      const duration = now - activeEvent.startedAt;
-      const outcome = (now - activeEvent.alertedAt) < CORRECTED_FAST_MS
+  if (postureState === 'good') {
+    if (state.activeEvent) {
+      const duration = now - state.activeEvent.startedAt;
+      const outcome = (now - state.activeEvent.alertedAt) < CORRECTED_FAST_MS
         ? 'corrected'
         : 'corrected-slow';
-      events.push({ ...activeEvent, endedAt: now, duration, outcome });
+      state.events.push({ ...state.activeEvent, endedAt: now, duration, outcome });
       persistEvents();
       renderStatsAndLog();
-      activeEvent = null;
+      state.activeEvent = null;
     }
-    pendingState = null;
+    state.pendingState = null;
     setStatus('good', 'OK');
     return;
   }
 
-  if (!pendingState || pendingState.type !== state) {
-    pendingState = { type: state, since: now };
+  if (!state.pendingState || state.pendingState.type !== postureState) {
+    state.pendingState = { type: postureState, since: now };
     setStatus('pending', '...');
     return;
   }
 
-  if (!activeEvent && now - pendingState.since >= ALERT_PERSISTENCE_MS) {
-    activeEvent = {
-      type: pendingState.type,
-      startedAt: pendingState.since,
+  if (!state.activeEvent && now - state.pendingState.since >= ALERT_PERSISTENCE_MS) {
+    state.activeEvent = {
+      type: state.pendingState.type,
+      startedAt: state.pendingState.since,
       alertedAt: now,
     };
-    dispatchAlert(activeVariant, pendingState.type);
-    setStatus('bad', pendingState.type.toUpperCase());
+    dispatchAlert(state.activeVariant, state.pendingState.type);
+    setStatus('bad', state.pendingState.type.toUpperCase());
     return;
   }
 
-  if (activeEvent && now - activeEvent.alertedAt > IGNORED_MS) {
-    events.push({
-      ...activeEvent,
+  if (state.activeEvent && now - state.activeEvent.alertedAt > IGNORED_MS) {
+    state.events.push({
+      ...state.activeEvent,
       endedAt: now,
-      duration: now - activeEvent.startedAt,
+      duration: now - state.activeEvent.startedAt,
       outcome: 'ignored',
     });
     persistEvents();
     renderStatsAndLog();
-    activeEvent = null;
-    pendingState = { type: state, since: now };
+    state.activeEvent = null;
+    state.pendingState = { type: postureState, since: now };
   }
 }
 
@@ -225,18 +257,17 @@ function dispatchAlert(variant, type) {
   if (variant === 'flash' || variant === 'combo') flash();
 }
 
-let audioCtx = null;
 function beep() {
-  audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
-  const o = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  o.connect(g).connect(audioCtx.destination);
+  state.audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+  const o = state.audioCtx.createOscillator();
+  const g = state.audioCtx.createGain();
+  o.connect(g).connect(state.audioCtx.destination);
   o.frequency.value = 800;
-  g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.3, audioCtx.currentTime + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
+  g.gain.setValueAtTime(0.0001, state.audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.3, state.audioCtx.currentTime + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, state.audioCtx.currentTime + 0.2);
   o.start();
-  o.stop(audioCtx.currentTime + 0.22);
+  o.stop(state.audioCtx.currentTime + 0.22);
 }
 
 function speak(type) {
@@ -258,37 +289,37 @@ function flash() {
 }
 
 calibrateBtn.addEventListener('click', () => {
-  if (!pose) {
+  if (!state.pose) {
     setStatus('pending', 'NO POSE');
     return;
   }
-  baseline = {
-    noseY: pose.nose.y,
-    shoulderTilt: pose.leftShoulder.y - pose.rightShoulder.y,
+  state.baseline = {
+    noseY: state.pose.nose.y,
+    shoulderTilt: state.pose.leftShoulder.y - state.pose.rightShoulder.y,
     capturedAt: Date.now(),
   };
-  localStorage.setItem(STORAGE.baseline, JSON.stringify(baseline));
+  lsSet(STORAGE.baseline, state.baseline);
   beep();
   setStatus('good', 'CALIBRATED');
 });
 
 thresholdEl.addEventListener('input', () => {
-  threshold = parseFloat(thresholdEl.value);
-  thresholdValEl.textContent = threshold.toFixed(3);
-  localStorage.setItem(STORAGE.threshold, String(threshold));
+  state.threshold = parseFloat(thresholdEl.value);
+  thresholdValEl.textContent = state.threshold.toFixed(3);
+  lsSet(STORAGE.threshold, state.threshold);
   updateSliderFill();
   updateDeltas();
 });
 
 document.querySelectorAll('.variant-btn').forEach((btn) => {
-  btn.classList.toggle('active', btn.dataset.variant === activeVariant);
+  btn.classList.toggle('active', btn.dataset.variant === state.activeVariant);
   btn.addEventListener('click', () => {
-    activeVariant = btn.dataset.variant;
+    state.activeVariant = btn.dataset.variant;
     const url = new URL(location.href);
-    url.searchParams.set('alert', activeVariant);
+    url.searchParams.set('alert', state.activeVariant);
     history.replaceState({}, '', url);
     document.querySelectorAll('.variant-btn').forEach((b) =>
-      b.classList.toggle('active', b.dataset.variant === activeVariant)
+      b.classList.toggle('active', b.dataset.variant === state.activeVariant)
     );
   });
 });
@@ -301,7 +332,7 @@ function todayStart() {
 
 function renderStatsAndLog() {
   const t0 = todayStart();
-  const today = events.filter((e) => e.endedAt >= t0);
+  const today = state.events.filter((e) => e.endedAt >= t0);
   const ignored = today.filter((e) => e.outcome === 'ignored').length;
   const totalMs = today.reduce((s, e) => s + (e.duration || 0), 0);
   const avgMs = today.length ? totalMs / today.length : 0;
@@ -357,16 +388,17 @@ function updateTimestamp() {
   timestampEl.textContent = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-let lastDetectTs = 0;
 async function frame() {
-  if (poseLandmarker && video.readyState >= 2) {
+  if (state.poseLandmarker && video.readyState >= 2) {
     const ts = performance.now();
-    if (ts - lastDetectTs >= 1000 / TICK_HZ) {
-      lastDetectTs = ts;
-      const result = poseLandmarker.detectForVideo(video, ts);
-      pose = extractPose(result.landmarks);
-      const state = baseline && pose ? classifyPosture(pose, baseline, threshold) : null;
-      drawSkeleton(pose, state);
+    if (ts - state.lastDetectTs >= 1000 / TICK_HZ) {
+      state.lastDetectTs = ts;
+      const result = state.poseLandmarker.detectForVideo(video, ts);
+      state.pose = extractPose(result.landmarks);
+      const postureState = state.baseline && state.pose
+        ? classifyPosture(state.pose, state.baseline, state.threshold)
+        : null;
+      drawSkeleton(state.pose, postureState);
     }
   }
   requestAnimationFrame(frame);
@@ -387,5 +419,5 @@ async function frame() {
   setInterval(updateTimestamp, 1000);
   updateTimestamp();
   renderStatsAndLog();
-  setStatus(baseline ? 'good' : 'pending', baseline ? 'OK' : 'CALIBRATE');
+  setStatus(state.baseline ? 'good' : 'pending', state.baseline ? 'OK' : 'CALIBRATE');
 })();
