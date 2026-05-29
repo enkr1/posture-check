@@ -59,7 +59,7 @@ function isRecent(e) {
 // ── App state: single source of mutation ─────────────
 const state = {
   baseline: lsGet(STORAGE.baseline, null),
-  threshold: lsGet(STORAGE.threshold, 0.035),
+  threshold: lsGet(STORAGE.threshold, 0.03),
   events: lsGet(STORAGE.events, []).filter(isRecent),
   activeVariant: new URLSearchParams(location.search).get('alert') || 'beep',
   pendingState: null,
@@ -180,6 +180,7 @@ function closeEvent(now) {
   });
   persistEvents();
   renderStatsAndLog();
+  speakConfirm();
   state.activeEvent = null;
 }
 
@@ -262,16 +263,28 @@ function beep() {
   o.stop(state.audioCtx.currentTime + 0.22);
 }
 
-function speak(type) {
-  const msg =
-    type === POSTURE.FORWARD    ? 'Sit up' :
-    type === POSTURE.LEAN_LEFT  ? 'Lean right' :
-    type === POSTURE.LEAN_RIGHT ? 'Lean left' :
-    'Posture';
+function say(msg) {
   const u = new SpeechSynthesisUtterance(msg);
   u.rate = 1.0;
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
+}
+
+function speak(type) {
+  say(
+    type === POSTURE.FORWARD    ? 'Sit up' :
+    type === POSTURE.LEAN_LEFT  ? 'Lean right' :
+    type === POSTURE.LEAN_RIGHT ? 'Lean left' :
+    'Posture'
+  );
+}
+
+// Positive confirmation when an episode closes — only for the voice modes,
+// so "leave it running" feels like a coach acknowledging the fix.
+function speakConfirm() {
+  if (state.activeVariant === 'voice' || state.activeVariant === 'combo') {
+    say('Good posture');
+  }
 }
 
 function flash() {
