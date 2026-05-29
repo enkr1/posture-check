@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 
 import {
   POSTURE,
+  OUTCOME,
   LATERAL_RATIO,
   computeDeltas,
   classifyPosture,
   formatDuration,
+  deriveOutcome,
 } from './posture.js';
+
+const THRESHOLDS = { fastMs: 10_000, ignoredMs: 30_000 };
 
 // Helper: build a pose where everything is fully visible and at baseline,
 // then nudge specific axes. Baseline is nose at 0.4, shoulders level.
@@ -108,4 +112,25 @@ test('formatDuration: zero and nullish are 0s', () => {
 test('formatDuration: rounds to nearest second', () => {
   assert.equal(formatDuration(8400), '8s');
   assert.equal(formatDuration(8600), '9s');
+});
+
+test('deriveOutcome: corrected when fixed before fast window ends', () => {
+  assert.equal(deriveOutcome(0, THRESHOLDS), OUTCOME.CORRECTED);
+  assert.equal(deriveOutcome(9999, THRESHOLDS), OUTCOME.CORRECTED);
+});
+
+test('deriveOutcome: fast boundary is exclusive lower edge of slow', () => {
+  // exactly fastMs → no longer "fast", becomes slow
+  assert.equal(deriveOutcome(10_000, THRESHOLDS), OUTCOME.CORRECTED_SLOW);
+});
+
+test('deriveOutcome: corrected-slow between fast and ignored windows', () => {
+  assert.equal(deriveOutcome(20_000, THRESHOLDS), OUTCOME.CORRECTED_SLOW);
+  assert.equal(deriveOutcome(29_999, THRESHOLDS), OUTCOME.CORRECTED_SLOW);
+});
+
+test('deriveOutcome: ignored once a full re-nag cycle is sat through', () => {
+  // at/after ignoredMs the user has been re-nagged at least once
+  assert.equal(deriveOutcome(30_000, THRESHOLDS), OUTCOME.IGNORED);
+  assert.equal(deriveOutcome(120_000, THRESHOLDS), OUTCOME.IGNORED);
 });

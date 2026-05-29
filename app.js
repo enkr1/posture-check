@@ -1,5 +1,5 @@
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9';
-import { POSTURE, LATERAL_RATIO, computeDeltas, classifyPosture, formatDuration } from './posture.js';
+import { POSTURE, OUTCOME, LATERAL_RATIO, computeDeltas, classifyPosture, formatDuration, deriveOutcome } from './posture.js';
 
 const STORAGE = {
   baseline: 'pc.baseline',
@@ -12,6 +12,7 @@ const CORRECTED_FAST_MS = 10_000;
 const IGNORED_MS = 30_000;
 const TICK_HZ = 5;
 const DAYS_KEPT = 7;
+const MAX_EVENTS = 1000;
 
 // ── DOM refs ──────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -67,10 +68,13 @@ const state = {
   poseLandmarker: null,
   audioCtx: null,
   lastDetectTs: 0,
+  lastRenderedDay: null,
 };
 
 function persistEvents() {
-  state.events = state.events.filter(isRecent);
+  // Trim to the 7-day window, then hard-cap so a pathological day can't
+  // grow the localStorage key toward the quota. Display only shows ~50.
+  state.events = state.events.filter(isRecent).slice(-MAX_EVENTS);
   lsSet(STORAGE.events, state.events);
 }
 
@@ -161,6 +165,24 @@ function updateDeltas() {
     `<span class="${lClass}">L:${fmt(lDelta)}</span>`;
 }
 
+// Close the current bad-posture episode: log exactly one event for the whole
+// continuous slouch, no matter how many re-nags fired during it.
+function closeEvent(now) {
+  const e = state.activeEvent;
+  const badMs = now - e.alertedAt;
+  state.events.push({
+    type: e.type,
+    startedAt: e.startedAt,
+    endedAt: now,
+    duration: now - e.startedAt,
+    nagCount: e.nagCount,
+    outcome: deriveOutcome(badMs, { fastMs: CORRECTED_FAST_MS, ignoredMs: IGNORED_MS }),
+  });
+  persistEvents();
+  renderStatsAndLog();
+  state.activeEvent = null;
+}
+
 function tick() {
   updateDeltas();
   if (!state.pose || !state.baseline) return;
@@ -168,50 +190,41 @@ function tick() {
   const now = Date.now();
 
   if (postureState === POSTURE.GOOD) {
-    if (state.activeEvent) {
-      const duration = now - state.activeEvent.startedAt;
-      const outcome = (now - state.activeEvent.alertedAt) < CORRECTED_FAST_MS
-        ? 'corrected'
-        : 'corrected-slow';
-      state.events.push({ ...state.activeEvent, endedAt: now, duration, outcome });
-      persistEvents();
-      renderStatsAndLog();
-      state.activeEvent = null;
-    }
+    if (state.activeEvent) closeEvent(now);
     state.pendingState = null;
     setStatus('good', 'OK');
     return;
   }
 
-  if (!state.pendingState || state.pendingState.type !== postureState) {
-    state.pendingState = { type: postureState, since: now };
-    setStatus('pending', '...');
+  // Bad posture, but not yet alerting: wait out the debounce window.
+  if (!state.activeEvent) {
+    if (!state.pendingState || state.pendingState.type !== postureState) {
+      state.pendingState = { type: postureState, since: now };
+      setStatus('pending', '...');
+      return;
+    }
+    if (now - state.pendingState.since >= ALERT_PERSISTENCE_MS) {
+      state.activeEvent = {
+        type: postureState,            // type that opened the episode (for the log)
+        startedAt: state.pendingState.since,
+        alertedAt: now,
+        lastNagAt: now,
+        nagCount: 1,
+      };
+      dispatchAlert(state.activeVariant, postureState);
+      setStatus('bad', postureState.toUpperCase());
+    }
     return;
   }
 
-  if (!state.activeEvent && now - state.pendingState.since >= ALERT_PERSISTENCE_MS) {
-    state.activeEvent = {
-      type: state.pendingState.type,
-      startedAt: state.pendingState.since,
-      alertedAt: now,
-    };
-    dispatchAlert(state.activeVariant, state.pendingState.type);
-    setStatus('bad', state.pendingState.type.toUpperCase());
-    return;
+  // Episode ongoing. Same continuous slouch = one event; re-nag every IGNORED_MS.
+  // Voice matches the CURRENT posture even if it drifted (forward → lean).
+  if (now - state.activeEvent.lastNagAt >= IGNORED_MS) {
+    state.activeEvent.lastNagAt = now;
+    state.activeEvent.nagCount += 1;
+    dispatchAlert(state.activeVariant, postureState);
   }
-
-  if (state.activeEvent && now - state.activeEvent.alertedAt > IGNORED_MS) {
-    state.events.push({
-      ...state.activeEvent,
-      endedAt: now,
-      duration: now - state.activeEvent.startedAt,
-      outcome: 'ignored',
-    });
-    persistEvents();
-    renderStatsAndLog();
-    state.activeEvent = null;
-    state.pendingState = { type: postureState, since: now };
-  }
+  setStatus('bad', postureState.toUpperCase());
 }
 
 function setStatus(cls, text) {
@@ -318,8 +331,10 @@ function todayStart() {
 
 function renderStatsAndLog() {
   const t0 = todayStart();
-  const today = state.events.filter((e) => e.endedAt >= t0);
-  const ignored = today.filter((e) => e.outcome === 'ignored').length;
+  // One time basis everywhere: an episode belongs to the day it STARTED.
+  // (Log row, peak-hour grouping, and "today" set all key off startedAt.)
+  const today = state.events.filter((e) => e.startedAt >= t0);
+  const ignored = today.filter((e) => e.outcome === OUTCOME.IGNORED).length;
   const totalMs = today.reduce((s, e) => s + (e.duration || 0), 0);
   const avgMs = today.length ? totalMs / today.length : 0;
 
@@ -341,20 +356,25 @@ function renderStatsAndLog() {
     <div class="value">${peak ? `${String(peak[0]).padStart(2, '0')}:00 (${peak[1]})` : '—'}</div>
   `;
 
+  state.lastRenderedDay = new Date(t0).getDate();
+
   logList.innerHTML = today
     .slice(-50)
     .reverse()
-    .map((e) => `
+    .map((e) => {
+      const label =
+        e.outcome === OUTCOME.CORRECTED      ? '✓ corrected' :
+        e.outcome === OUTCOME.CORRECTED_SLOW ? '~ slow' :
+                                               '✗ ignored';
+      const nags = e.nagCount > 1 ? ` ×${e.nagCount}` : '';
+      return `
       <div class="log-entry">
         <span>${formatTime(e.startedAt)}</span>
         <span>${e.type}</span>
         <span>${formatDuration(e.duration)}</span>
-        <span class="outcome ${e.outcome}">${
-          e.outcome === 'corrected'      ? '✓ corrected' :
-          e.outcome === 'corrected-slow' ? '~ slow' :
-                                           '✗ ignored'
-        }</span>
-      </div>`).join('');
+        <span class="outcome ${e.outcome}">${label}${nags}</span>
+      </div>`;
+    }).join('');
 }
 
 function formatTime(ms) {
@@ -366,6 +386,11 @@ function updateTimestamp() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   timestampEl.textContent = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+  // Roll "Today" over at midnight even if no event fires to trigger a render.
+  if (state.lastRenderedDay !== null && state.lastRenderedDay !== d.getDate()) {
+    renderStatsAndLog();
+  }
 }
 
 async function frame() {

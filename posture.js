@@ -9,6 +9,13 @@ export const POSTURE = Object.freeze({
   LEAN_RIGHT: 'lean-right',
 });
 
+/** Outcome of a bad-posture episode, derived from how long it lasted. */
+export const OUTCOME = Object.freeze({
+  CORRECTED: 'corrected',
+  CORRECTED_SLOW: 'corrected-slow',
+  IGNORED: 'ignored',
+});
+
 /** Lateral threshold as a fraction of the forward threshold. Shoulders move
  *  less than the head during natural movement, so the lateral gate is tighter. */
 export const LATERAL_RATIO = 0.6;
@@ -71,4 +78,17 @@ export function formatDuration(ms) {
   const s = Math.round((ms || 0) / 1000);
   if (s < 60) return `${s}s`;
   return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+/**
+ * Classify a bad-posture episode by how long it lasted after the first alert.
+ * One episode → one outcome, regardless of how many re-nags fired.
+ * @param {number} badMs time from first alert until posture returned to good
+ * @param {{ fastMs: number, ignoredMs: number }} windows
+ * @returns {string} one of OUTCOME.*
+ */
+export function deriveOutcome(badMs, { fastMs, ignoredMs }) {
+  if (badMs < fastMs) return OUTCOME.CORRECTED;
+  if (badMs < ignoredMs) return OUTCOME.CORRECTED_SLOW;
+  return OUTCOME.IGNORED;
 }
