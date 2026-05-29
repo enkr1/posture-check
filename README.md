@@ -82,7 +82,10 @@ Requires `getUserMedia`, MediaPipe Tasks Vision, Web Audio, Speech Synthesis. Al
 posture-check/
 ├── index.html       Markup: header + cam + stats + log + footer
 ├── style.css        Surveillance-themed UI (font tokens, overlay pseudos, slider)
-├── app.js           State machine + MediaPipe pipeline + alert dispatcher
+├── app.js           State machine + MediaPipe pipeline + alert dispatcher (DOM plumbing)
+├── posture.js       Pure detection logic — classify, deltas, formatting (no DOM)
+├── posture.test.js  Tests for posture.js (node:test, zero dependencies)
+├── package.json     ESM flag + `npm test` script (no runtime dependencies)
 ├── start.sh         Local server launcher (macOS — open + lsof)
 ├── docs/
 │   └── hero.svg     README hero image
@@ -91,7 +94,17 @@ posture-check/
 └── .gitignore
 ```
 
-The detection logic is one function (`classifyPosture`) of about 20 lines. The state machine (`tick`) does temporal debouncing, outcome measurement, and event logging. Everything else is UI plumbing.
+The detection logic lives in `posture.js` — pure functions (`classifyPosture`, `computeDeltas`, `formatDuration`) with no DOM or time dependency, which is exactly why they are unit-tested. `app.js` is the state machine (`tick` does temporal debouncing, outcome measurement, event logging) plus all the UI plumbing.
+
+## Development
+
+No build step and no runtime dependencies. Tests use Node's built-in test runner (Node 18+):
+
+```bash
+npm test
+```
+
+Only the pure logic in `posture.js` is tested — the threshold boundaries and lean-direction signs are where sensitivity tuning is most likely to introduce regressions. The UI is verified by hand in the browser.
 
 ## Sensitivity tuning
 

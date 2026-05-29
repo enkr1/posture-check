@@ -1,0 +1,16 @@
+{
+  "name": "posture-check",
+  "version": "1.0.0",
+  "description": "Browser-only posture monitor. Watches via webcam, alerts on slouching or lateral lean.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/enkr1/posture-check.git"
+  },
+  "keywords": ["posture", "mediapipe", "webcam", "vanilla-js", "health"],
+  "private": true
+}

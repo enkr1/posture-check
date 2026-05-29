@@ -1,4 +1,5 @@
 import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9';
+import { POSTURE, LATERAL_RATIO, computeDeltas, classifyPosture, formatDuration } from './posture.js';
 
 const STORAGE = {
   baseline: 'pc.baseline',
@@ -11,7 +12,6 @@ const CORRECTED_FAST_MS = 10_000;
 const IGNORED_MS = 30_000;
 const TICK_HZ = 5;
 const DAYS_KEPT = 7;
-const LATERAL_RATIO = 0.6;
 
 // ── DOM refs ──────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -74,14 +74,6 @@ function persistEvents() {
   lsSet(STORAGE.events, state.events);
 }
 
-// ── Shared geometry: both classify and live readout use this ──
-function computeDeltas(pose, baseline) {
-  return {
-    fDelta: pose.nose.y - baseline.noseY,
-    lDelta: (pose.leftShoulder.y - pose.rightShoulder.y) - baseline.shoulderTilt,
-  };
-}
-
 function updateSliderFill() {
   const min = parseFloat(thresholdEl.min);
   const max = parseFloat(thresholdEl.max);
@@ -92,30 +84,6 @@ function updateSliderFill() {
 thresholdEl.value = state.threshold;
 thresholdValEl.textContent = state.threshold.toFixed(3);
 updateSliderFill();
-
-/**
- * Per-frame posture classification.
- * Returns 'good' | 'forward' | 'lean-left' | 'lean-right'.
- * Temporal smoothing lives in tick(), not here — return an honest snapshot.
- */
-function classifyPosture(pose, baseline, threshold) {
-  if (pose.nose.visibility < 0.5 ||
-      pose.leftShoulder.visibility < 0.5 ||
-      pose.rightShoulder.visibility < 0.5) {
-    return 'good';
-  }
-
-  const { fDelta, lDelta } = computeDeltas(pose, baseline);
-
-  if (fDelta > threshold) return 'forward';
-
-  const lat = threshold * LATERAL_RATIO;
-  // y grows downward, so leftShoulder dropping (y rises) means user leans to their own LEFT.
-  if (lDelta >  lat) return 'lean-left';
-  if (lDelta < -lat) return 'lean-right';
-
-  return 'good';
-}
 
 async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -161,7 +129,7 @@ function drawSkeleton(p, postureState) {
   // canvas is not CSS-mirrored, so flip x to align with mirrored video display
   const X = (kp) => (1 - kp.x) * w;
   const Y = (kp) => kp.y * h;
-  const color = postureState === 'good' ? '#20c060' : postureState ? '#ff2020' : '#909090';
+  const color = postureState === POSTURE.GOOD ? '#20c060' : postureState ? '#ff2020' : '#909090';
 
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
@@ -199,7 +167,7 @@ function tick() {
   const postureState = classifyPosture(state.pose, state.baseline, state.threshold);
   const now = Date.now();
 
-  if (postureState === 'good') {
+  if (postureState === POSTURE.GOOD) {
     if (state.activeEvent) {
       const duration = now - state.activeEvent.startedAt;
       const outcome = (now - state.activeEvent.alertedAt) < CORRECTED_FAST_MS
@@ -272,9 +240,9 @@ function beep() {
 
 function speak(type) {
   const msg =
-    type === 'forward'    ? 'Sit up' :
-    type === 'lean-left'  ? 'Lean right' :
-    type === 'lean-right' ? 'Lean left' :
+    type === POSTURE.FORWARD    ? 'Sit up' :
+    type === POSTURE.LEAN_LEFT  ? 'Lean right' :
+    type === POSTURE.LEAN_RIGHT ? 'Lean left' :
     'Posture';
   const u = new SpeechSynthesisUtterance(msg);
   u.rate = 1.0;
@@ -381,12 +349,6 @@ function renderStatsAndLog() {
 function formatTime(ms) {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-function formatDuration(ms) {
-  const s = Math.round((ms || 0) / 1000);
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
 function updateTimestamp() {
