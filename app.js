@@ -225,6 +225,17 @@ function dispatchAlert(variant, type) {
   if (variant === 'flash' || variant === 'combo') flash();
 }
 
+// AudioContext starts suspended without a user gesture. A returning user with a
+// saved baseline may never click anything, so their first alert beep would be
+// silent. Prime + resume on the first interaction of any kind.
+function primeAudio() {
+  state.audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+  if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+}
+['pointerdown', 'keydown'].forEach((evt) =>
+  window.addEventListener(evt, primeAudio, { once: true })
+);
+
 function beep() {
   state.audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
   const o = state.audioCtx.createOscillator();
@@ -362,8 +373,15 @@ async function frame() {
     const ts = performance.now();
     if (ts - state.lastDetectTs >= 1000 / TICK_HZ) {
       state.lastDetectTs = ts;
-      const result = state.poseLandmarker.detectForVideo(video, ts);
-      state.pose = extractPose(result.landmarks);
+      try {
+        // GPU delegate can throw on a single frame (context loss, VRAM hiccup).
+        // Swallow it so the RAF loop survives — otherwise detection dies silently
+        // and the UI keeps showing OK forever.
+        const result = state.poseLandmarker.detectForVideo(video, ts);
+        state.pose = extractPose(result.landmarks);
+      } catch (err) {
+        console.warn('pose detection frame failed, continuing', err);
+      }
       const postureState = state.baseline && state.pose
         ? classifyPosture(state.pose, state.baseline, state.threshold)
         : null;
